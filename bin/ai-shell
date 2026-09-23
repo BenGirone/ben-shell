@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+set -o nounset
+set -o pipefail
+
+VERSION=1.1.0
+usage() {
+    cat <<'EOF'
+Usage: ai-shell [--cwd PATH] [--platform ubuntu|macos] [--debug] -- REQUEST
+       ai-shell --help | --version
+
+Exit codes: 2 usage/config, 3 key, 4 dependency, 5 transport,
+6 HTTP, 7 malformed response, 8 incomplete/failed/refused/empty response.
+EOF
+}
+die() { printf 'ai-shell: %s\n' "$2" >&2; exit "$1"; }
+safe_detail() {
+    local value=${1-}
+    value=${value//$'\n'/ }
+    value=${value//$'\r'/ }
+    if [[ -n ${key-} ]]; then value=${value//"$key"/[redacted]}; fi
+    printf '%.160s' "$value"
+}
+file_owner() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1"; }
+file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
+cwd=$PWD
+case $(uname -s) in Darwin) platform=macos ;; *) platform=ubuntu ;; esac
+debug_cli=0
+while (($#)); do
+    case $1 in
+        --cwd) (($# >= 2)) || die 2 '--cwd requires a path'; cwd=$2; shift 2 ;;
+        --platform) (($# >= 2)) || die 2 '--platform requires a value'; platform=$2; shift 2 ;;
+        --debug) debug_cli=1; shift ;;
+        --help) usage; exit 0 ;;
+        --version) printf 'ai-shell %s\n' "$VERSION"; exit 0 ;;
+        --) shift; break ;;
+        *) die 2 "unknown option: $(safe_detail "$1")" ;;
+    esac
+done
+(($# == 1)) || die 2 'provide one request after --'
+request=$1
+[[ $request =~ [^[:space:]] ]] || die 2 'request is empty'
+
+config_dir=${XDG_CONFIG_HOME:-$HOME/.config}/ai-shell
+config_file=$config_dir/config
+env_model=${AI_SHELL_MODEL-}; env_model_set=${AI_SHELL_MODEL+x}
+env_effort=${AI_SHELL_REASONING_EFFORT-}; env_effort_set=${AI_SHELL_REASONING_EFFORT+x}
+env_tokens=${AI_SHELL_MAX_OUTPUT_TOKENS-}; env_tokens_set=${AI_SHELL_MAX_OUTPUT_TOKENS+x}
+env_connect=${AI_SHELL_CONNECT_TIMEOUT_SECONDS-}; env_connect_set=${AI_SHELL_CONNECT_TIMEOUT_SECONDS+x}
+env_timeout=${AI_SHELL_TIMEOUT_SECONDS-}; env_timeout_set=${AI_SHELL_TIMEOUT_SECONDS+x}
+env_debug=${AI_SHELL_DEBUG-}; env_debug_set=${AI_SHELL_DEBUG+x}
+env_log=${AI_SHELL_LOG_FILE-}; env_log_set=${AI_SHELL_LOG_FILE+x}
+AI_SHELL_MODEL=gpt-6-luna
+AI_SHELL_REASONING_EFFORT=low
+AI_SHELL_MAX_OUTPUT_TOKENS=2048
+AI_SHELL_CONNECT_TIMEOUT_SECONDS=5
+AI_SHELL_TIMEOUT_SECONDS=30
+AI_SHELL_DEBUG=0
+AI_SHELL_LOG_FILE=
+if [[ -e $config_file || -L $config_file ]]; then
+    [[ -f $config_file && ! -L $config_file && -r $config_file ]] || die 2 'unsafe or unreadable config file'
+    [[ $(file_owner "$config_file") == "$EUID" ]] || die 2 'config file must be owned by current user'
+    mode=$(file_mode "$config_file")
+    (( (8#$mode & 0022) == 0 )) || die 2 'config file must not be group- or world-writable'
+    # This is user-owned executable shell configuration. Never source untrusted files.
+    # shellcheck source=/dev/null
+    source "$config_file"
+fi
+[[ -z $env_model_set ]] || AI_SHELL_MODEL=$env_model
+[[ -z $env_effort_set ]] || AI_SHELL_REASONING_EFFORT=$env_effort
+[[ -z $env_tokens_set ]] || AI_SHELL_MAX_OUTPUT_TOKENS=$env_tokens
+[[ -z $env_connect_set ]] || AI_SHELL_CONNECT_TIMEOUT_SECONDS=$env_connect
+[[ -z $env_timeout_set ]] || AI_SHELL_TIMEOUT_SECONDS=$env_timeout
+[[ -z $env_debug_set ]] || AI_SHELL_DEBUG=$env_debug
+[[ -z $env_log_set ]] || AI_SHELL_LOG_FILE=$env_log
+((debug_cli == 0)) || AI_SHELL_DEBUG=1
+
+[[ $AI_SHELL_MODEL =~ ^gpt-[a-zA-Z0-9.-]+$ ]] || die 2 'invalid model'
+[[ $AI_SHELL_REASONING_EFFORT =~ ^(minimal|low|medium|high|xhigh|max|ultra)$ ]] || die 2 'invalid reasoning effort'
+if [[ ! $AI_SHELL_MAX_OUTPUT_TOKENS =~ ^[1-9][0-9]{0,4}$ ]] || ((AI_SHELL_MAX_OUTPUT_TOKENS > 32768)); then die 2 'max output tokens must be 1..32768'; fi
+if [[ ! $AI_SHELL_CONNECT_TIMEOUT_SECONDS =~ ^[1-9][0-9]?$ ]] || ((AI_SHELL_CONNECT_TIMEOUT_SECONDS > 60)); then die 2 'connect timeout must be 1..60 seconds'; fi
+if [[ ! $AI_SHELL_TIMEOUT_SECONDS =~ ^[1-9][0-9]{0,2}$ ]] || ((AI_SHELL_TIMEOUT_SECONDS > 300)); then die 2 'timeout must be 1..300 seconds'; fi
+((AI_SHELL_CONNECT_TIMEOUT_SECONDS <= AI_SHELL_TIMEOUT_SECONDS)) || die 2 'connect timeout exceeds total timeout'
+[[ $AI_SHELL_DEBUG == 0 || $AI_SHELL_DEBUG == 1 ]] || die 2 'debug must be 0 or 1'
+[[ $platform == ubuntu || $platform == macos ]] || die 2 'platform must be ubuntu or macos'
+[[ -d $cwd ]] || die 2 'working directory does not exist'
+
+for dependency in curl jq mktemp stat; do
+    command -v "$dependency" >/dev/null 2>&1 || die 4 "missing dependency: $dependency"
+done
+
+log() {
+    [[ $AI_SHELL_DEBUG == 1 ]] || return 0
+    local line
+    line="ai-shell: debug: $(safe_detail "$*")"
+    if [[ -n $AI_SHELL_LOG_FILE ]]; then
+        if [[ ! -L $AI_SHELL_LOG_FILE ]]; then
+            if [[ ! -e $AI_SHELL_LOG_FILE ]]; then
+                (umask 077; set -o noclobber; : > "$AI_SHELL_LOG_FILE") 2>/dev/null || true
+            fi
+            if [[ -f $AI_SHELL_LOG_FILE && $(file_owner "$AI_SHELL_LOG_FILE") == "$EUID" ]]; then
+                chmod 600 "$AI_SHELL_LOG_FILE" 2>/dev/null || true
+                printf '%s\n' "$line" >> "$AI_SHELL_LOG_FILE" 2>/dev/null && return
+            fi
+        fi
+        printf 'ai-shell: debug log unavailable; using stderr\n' >&2
+    fi
+    printf '%s\n' "$line" >&2
+}
+
+key=${OPENAI_API_KEY-}
+if [[ -z $key ]]; then
+    key_file=$config_dir/openai_api_key
+    [[ -f $key_file && ! -L $key_file && -r $key_file ]] || die 3 'OpenAI API key not found; set OPENAI_API_KEY or create ~/.config/ai-shell/openai_api_key'
+    [[ $(file_owner "$key_file") == "$EUID" ]] || die 3 'API key file must be owned by current user'
+    mode=$(file_mode "$key_file")
+    (( (8#$mode & 0077) == 0 )) || die 3 'API key file must have mode 0600'
+    IFS= read -r key < "$key_file" || [[ -n $key ]] || die 3 'OpenAI API key file is empty'
+    key=${key%$'\r'}
+fi
+[[ -n $key ]] || die 3 'OpenAI API key not found'
+# Also prevents curl-config injection; the key is sent over stdin, never argv.
+[[ $key =~ ^[a-zA-Z0-9._-]+$ ]] || die 3 'API key contains unsupported characters'
+
+if [[ $platform == macos ]]; then
+    instructions='Convert the user request into a macOS zsh command. Return only the command, with no Markdown, explanation, or leading dollar sign. Prefer utilities available by default on macOS; do not assume GNU-only flags. Do not use sudo unless clearly necessary. Never claim to have executed the command.'
+else
+    instructions='Convert the user request into an Ubuntu Bash command. Return only the command, with no Markdown, explanation, or leading dollar sign. Prefer standard Ubuntu utilities. Do not use sudo unless clearly necessary. Never claim to have executed the command.'
+fi
+payload=$(jq -n --arg model "$AI_SHELL_MODEL" --arg effort "$AI_SHELL_REASONING_EFFORT" --arg request "$request" --arg cwd "$cwd" --arg platform "$platform" --arg instructions "$instructions" --argjson tokens "$AI_SHELL_MAX_OUTPUT_TOKENS" '{model:$model,reasoning:{effort:$effort},instructions:$instructions,input:("Request: " + $request + "\nCurrent directory: " + $cwd + "\nPlatform: " + $platform),max_output_tokens:$tokens,store:false}') || die 2 'could not construct request'
+
+body_file=$(mktemp) || die 5 'could not create temporary response file'
+payload_file=$(mktemp) || { rm -f -- "$body_file"; die 5 'could not create temporary request file'; }
+trap 'rm -f -- "$body_file" "$payload_file"' EXIT
+printf '%s' "$payload" > "$payload_file"
+log "version=$VERSION model=$AI_SHELL_MODEL effort=$AI_SHELL_REASONING_EFFORT tokens=$AI_SHELL_MAX_OUTPUT_TOKENS connect_timeout=$AI_SHELL_CONNECT_TIMEOUT_SECONDS timeout=$AI_SHELL_TIMEOUT_SECONDS"
+start=$SECONDS
+# curl reads the Authorization header from stdin, keeping the key out of process arguments.
+if http_status=$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl --silent --show-error --config - --connect-timeout "$AI_SHELL_CONNECT_TIMEOUT_SECONDS" --max-time "$AI_SHELL_TIMEOUT_SECONDS" --request POST --header 'Content-Type: application/json' --data-binary "@$payload_file" --output "$body_file" --write-out '%{http_code}' 'https://api.openai.com/v1/responses'); then
+    :
+else
+    status=$?
+    log "duration_seconds=$((SECONDS-start)) transport_exit=$status category=transport"
+    if [[ $status == 28 ]]; then die 5 'request timed out'; fi
+    die 5 "network or TLS failure (curl exit $status)"
+fi
+log "duration_seconds=$((SECONDS-start)) http_status=$http_status"
+[[ $http_status =~ ^[0-9]{3}$ ]] || die 7 'invalid HTTP status from transport'
+if ((http_status < 200 || http_status > 299)); then
+    detail=$(jq -r 'if .error | type == "object" then (.error.message // .error.code // empty) else empty end | strings' "$body_file" 2>/dev/null) || detail=
+    detail=$(safe_detail "$detail")
+    [[ -n $detail ]] || detail='request failed'
+    die 6 "API returned HTTP $http_status: $detail"
+fi
+jq -e 'type == "object"' "$body_file" >/dev/null 2>&1 || die 7 'malformed API response'
+has_api_error=$(jq -r '.error != null' "$body_file") || die 7 'malformed API response'
+if [[ $has_api_error == true ]]; then
+    api_error=$(jq -r '.error.code // .error.message // "API error" | strings' "$body_file" 2>/dev/null) || die 7 'malformed API response'
+    die 7 "API error: $(safe_detail "$api_error")"
+fi
+response_status=$(jq -r '.status // empty | strings' "$body_file") || die 7 'malformed API response'
+log "response_status=$response_status response_id=$(jq -r '.id // "" | strings' "$body_file") output_tokens=$(jq -r '.usage.output_tokens // ""' "$body_file") reasoning_tokens=$(jq -r '.usage.output_tokens_details.reasoning_tokens // ""' "$body_file")"
+if [[ $response_status == incomplete ]]; then
+    reason=$(jq -r '.incomplete_details.reason // "unknown" | strings' "$body_file")
+    die 8 "response incomplete: $(safe_detail "$reason")"
+fi
+if [[ $response_status == failed || $response_status == cancelled ]]; then
+    reason=$(jq -r '.error.code // .error.message // empty | strings' "$body_file")
+    die 8 "response $response_status${reason:+: $(safe_detail "$reason")}"
+fi
+[[ $response_status == completed ]] || die 7 'unexpected API response status'
+jq -e '.output | type == "array"' "$body_file" >/dev/null 2>&1 || die 7 'unexpected API output schema'
+jq -e 'all(.output[]?; (.content == null or (.content | type == "array")))' "$body_file" >/dev/null 2>&1 || die 7 'unexpected API output schema'
+if jq -e 'any(.output[]?.content[]?; .type == "refusal")' "$body_file" >/dev/null 2>&1; then
+    die 8 'response contained a refusal instead of a command'
+fi
+jq -e 'all(.output[]?.content[]?; .type != "output_text" or (.text | type == "string"))' "$body_file" >/dev/null 2>&1 || die 7 'unexpected API text schema'
+if jq -e 'any(.output[]?.content[]?; .type == "output_text" and (.text | contains("\u0000")))' "$body_file" >/dev/null 2>&1; then
+    die 7 'API output contains a NUL byte'
+fi
+command_text=$(jq -jr '[.output[]?.content[]? | select(.type == "output_text") | .text] | join("")' "$body_file") || die 7 'could not extract API output'
+# Remove only a complete surrounding code fence or a single leading shell prompt.
+if [[ $command_text == '```bash'$'\n'* || $command_text == '```sh'$'\n'* || $command_text == '```'$'\n'* ]]; then
+    if [[ $command_text == *$'\n''```' ]]; then
+        command_text=${command_text#*$'\n'}
+        command_text=${command_text%$'\n'\`\`\`}
+    fi
+fi
+if [[ $command_text == '$ '* && $command_text != *$'\n'* ]]; then command_text=${command_text#'$ '}; fi
+[[ $command_text =~ [^[:space:]] ]] || die 8 'model returned no command'
+byte_count=$(printf '%s' "$command_text" | wc -c)
+((byte_count <= 65536)) || die 8 'model command exceeds 64 KiB limit'
+log 'category=success'
+printf '%s\n' "$command_text"

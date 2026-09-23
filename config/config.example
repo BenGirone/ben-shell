@@ -1,0 +1,8 @@
+# This file is sourced as Bash code. Keep it user-owned and do not copy untrusted content.
+AI_SHELL_MODEL=gpt-6-luna
+AI_SHELL_REASONING_EFFORT=low
+AI_SHELL_MAX_OUTPUT_TOKENS=2048
+AI_SHELL_CONNECT_TIMEOUT_SECONDS=5
+AI_SHELL_TIMEOUT_SECONDS=30
+AI_SHELL_DEBUG=0
+AI_SHELL_LOG_FILE=

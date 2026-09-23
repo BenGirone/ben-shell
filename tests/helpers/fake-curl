@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -o nounset
+set -o pipefail
+config=$(cat)
+[[ $config == *"Authorization: Bearer ${FAKE_EXPECT_KEY:?}"* ]] || exit 22
+output=
+while (($#)); do
+    case $1 in
+        --output) output=$2; shift 2 ;;
+        --data-binary) cp -- "${2#@}" "$FAKE_PAYLOAD_COPY"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+[[ -n $output ]] || exit 23
+if [[ ${FAKE_CURL_EXIT-0} != 0 ]]; then exit "$FAKE_CURL_EXIT"; fi
+cp -- "$FAKE_RESPONSE" "$output"
+printf '%s' "${FAKE_HTTP_STATUS:-200}"
