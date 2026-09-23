@@ -3,6 +3,7 @@
 `ai-shell` turns text at an interactive shell prompt into a proposed command. It leaves the command in the editable prompt for review and **never executes it**.
 
 While an interactive rewrite is waiting for the API, a spinner appears on the terminal. It clears before the proposed command or an error is shown.
+Keys pressed during the wait are ignored, so press Enter only after the replacement is visible and reviewed.
 
 | Platform | Shell | Key binding | Installer |
 | --- | --- | --- | --- |
@@ -16,13 +17,13 @@ macOS zsh's ZLE exposes the whole editable buffer through `BUFFER`. The widget r
 Use the platform's terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.0/install-online.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.1/install-online.sh | bash
 ```
 
 The downloadable script contains the source installer and a checksum-checked archive of the files it installs. It detects macOS or Ubuntu, prompts for the OpenAI API key through the terminal without echoing it, saves it as a user-only file, and installs the matching shell binding. An existing key is preserved. Download and inspect the script first if you prefer to review it before running it:
 
 ```bash
-curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.0/install-online.sh
+curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.1/install-online.sh
 less install-online.sh
 bash install-online.sh
 ```

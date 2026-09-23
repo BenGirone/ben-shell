@@ -11,7 +11,16 @@ function ai-shell-rewrite-widget() {
         zle -M 'ai-shell: executable not found in PATH'
         return 0
     fi
-    if replacement=$(command ai-shell --spinner --platform macos --cwd "$PWD" -- "$original"); then
+    # External terminal output from the spinner invalidates ZLE's cached prompt.
+    zle -I
+    local cli_status=0 ignored pending_count=0
+    replacement=$(command ai-shell --spinner --platform macos --cwd "$PWD" -- "$original") || cli_status=$?
+    # Keys typed during the request, especially Enter, must not act on the new buffer.
+    while (( (PENDING > 0 || KEYS_QUEUED_COUNT > 0) && pending_count < 4096 )); do
+        read -k 1 -t 0 ignored || break
+        (( ++pending_count ))
+    done
+    if (( cli_status == 0 )); then
         if [[ -n $replacement ]]; then
             BUFFER=$replacement
             CURSOR=${#BUFFER}

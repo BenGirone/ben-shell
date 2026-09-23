@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.1 — 2026-09-23
+
+- Fixed zsh prompt and command redraw after the spinner.
+- Discarded keys typed while a rewrite is pending, preventing a queued Enter from executing the result or original request.
+
 ## 1.3.0 — 2026-09-22
 
 - Added Ctrl+G as a single-chord macOS zsh binding. The previous Ctrl+X Ctrl+I binding still works.
