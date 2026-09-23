@@ -24,6 +24,8 @@ if [[ $config_dir == "$HOME/.config/ai-shell" ]]; then
 fi
 if ((remove_user_data)); then
     rm -f -- "$config_dir/config" "$config_dir/openai_api_key"
-    [[ -d $config_dir && ! -L $config_dir ]] && rmdir -- "$config_dir" 2>/dev/null || true
+    if [[ -d $config_dir && ! -L $config_dir ]]; then
+        rmdir -- "$config_dir" 2>/dev/null || true
+    fi
 fi
 printf 'ai-shell removed. User configuration and key %s.\n' "$([[ $remove_user_data == 1 ]] && printf removed || printf preserved)"

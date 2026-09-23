@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1 — 2026-09-22
+
+- Fixed a ShellCheck portability warning in the uninstaller.
+
 ## 1.1.0 — 2026-09-22
 
 - Added a self-contained online installer with a private API-key prompt.

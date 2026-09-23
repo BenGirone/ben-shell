@@ -11,16 +11,16 @@ macOS zsh's ZLE exposes the whole editable buffer through `BUFFER`. The widget r
 
 ## One-command install
 
-After the `v1.1.0` tag is published to `BenGirone/ben-shell`, use the platform's terminal:
+Use the platform's terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.1.0/install-online.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.1.1/install-online.sh | bash
 ```
 
 The downloadable script contains the source installer and a checksum-checked archive of the files it installs. It detects macOS or Ubuntu, prompts for the OpenAI API key through the terminal without echoing it, saves it as a user-only file, and installs the matching shell binding. An existing key is preserved. Download and inspect the script first if you prefer to review it before running it:
 
 ```bash
-curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.1.0/install-online.sh
+curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.1.1/install-online.sh
 less install-online.sh
 bash install-online.sh
 ```

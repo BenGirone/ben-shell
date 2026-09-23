@@ -2,7 +2,7 @@
 set -o nounset
 set -o pipefail
 
-VERSION=1.1.0
+VERSION=1.1.1
 usage() {
     cat <<'EOF'
 Usage: ai-shell [--cwd PATH] [--platform ubuntu|macos] [--debug] -- REQUEST
