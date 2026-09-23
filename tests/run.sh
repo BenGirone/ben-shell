@@ -8,7 +8,7 @@ trap 'rm -rf -- "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/home" "$tmp/config/ai-shell"
 cp "$root/tests/helpers/fake-curl" "$tmp/bin/curl"
 chmod +x "$tmp/bin/curl"
-export PATH="$tmp/bin:$PATH" HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config"
+export PATH="$tmp/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$tmp/home" XDG_CONFIG_HOME="$tmp/config"
 export OPENAI_API_KEY='test_key_secret_123' FAKE_EXPECT_KEY='test_key_secret_123' FAKE_PAYLOAD_COPY="$tmp/payload" FAKE_RESPONSE="$tmp/response"
 unset AI_SHELL_MODEL AI_SHELL_REASONING_EFFORT AI_SHELL_MAX_OUTPUT_TOKENS AI_SHELL_CONNECT_TIMEOUT_SECONDS AI_SHELL_TIMEOUT_SECONDS AI_SHELL_DEBUG AI_SHELL_LOG_FILE
 pass=0
@@ -26,6 +26,8 @@ response() { printf '%s' "$1" > "$FAKE_RESPONSE"; }
 response '{"status":"completed","output":[{"content":[{"type":"output_text","text":"echo one"},{"type":"output_text","text":" && echo two"}]}]}'
 run_case 0 success --cwd "$tmp/home" -- 'show one and two'
 [[ $(cat "$tmp/stdout") == 'echo one && echo two' ]]
+run_case 0 spinner-without-terminal --spinner -- 'show one and two'
+[[ ! -s $tmp/stderr ]]
 jq -e '.model == "gpt-6-luna" and .reasoning.effort == "low" and .store == false' "$tmp/payload" >/dev/null
 request=$'-starts "quoted" \\ $HOME $(id) ☃\nnext\tline'
 run_case 0 encoding --cwd "$tmp/home" -- "$request"

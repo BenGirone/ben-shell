@@ -11,7 +11,7 @@ function ai-shell-rewrite-widget() {
         zle -M 'ai-shell: executable not found in PATH'
         return 0
     fi
-    if replacement=$(command ai-shell --platform macos --cwd "$PWD" -- "$original"); then
+    if replacement=$(command ai-shell --spinner --platform macos --cwd "$PWD" -- "$original"); then
         if [[ -n $replacement ]]; then
             BUFFER=$replacement
             CURSOR=${#BUFFER}

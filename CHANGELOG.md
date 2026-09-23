@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0 — 2026-09-22
+
+- Show a terminal spinner during interactive rewrites on Bash and zsh, clearing it before the result or an error.
+
 ## 1.1.1 — 2026-09-22
 
 - Fixed a ShellCheck portability warning in the uninstaller.

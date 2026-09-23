@@ -8,7 +8,7 @@ if [[ $- == *i* ]]; then
             printf 'ai-shell: executable not found in PATH\n' >&2
             return 0
         fi
-        if command_text=$(ai-shell --cwd "$PWD" -- "$original"); then
+        if command_text=$(ai-shell --spinner --cwd "$PWD" -- "$original"); then
             status=0
         else
             status=$?

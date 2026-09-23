@@ -12,6 +12,7 @@ while (($#)); do
     esac
 done
 [[ -n $output ]] || exit 23
+if [[ -n ${FAKE_CURL_DELAY-} ]]; then sleep "$FAKE_CURL_DELAY"; fi
 if [[ ${FAKE_CURL_EXIT-0} != 0 ]]; then exit "$FAKE_CURL_EXIT"; fi
 cp -- "$FAKE_RESPONSE" "$output"
 printf '%s' "${FAKE_HTTP_STATUS:-200}"

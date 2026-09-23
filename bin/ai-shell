@@ -2,10 +2,10 @@
 set -o nounset
 set -o pipefail
 
-VERSION=1.1.1
+VERSION=1.2.0
 usage() {
     cat <<'EOF'
-Usage: ai-shell [--cwd PATH] [--platform ubuntu|macos] [--debug] -- REQUEST
+Usage: ai-shell [--cwd PATH] [--platform ubuntu|macos] [--debug] [--spinner] -- REQUEST
        ai-shell --help | --version
 
 Exit codes: 2 usage/config, 3 key, 4 dependency, 5 transport,
@@ -26,11 +26,13 @@ file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 cwd=$PWD
 case $(uname -s) in Darwin) platform=macos ;; *) platform=ubuntu ;; esac
 debug_cli=0
+spinner_cli=0
 while (($#)); do
     case $1 in
         --cwd) (($# >= 2)) || die 2 '--cwd requires a path'; cwd=$2; shift 2 ;;
         --platform) (($# >= 2)) || die 2 '--platform requires a value'; platform=$2; shift 2 ;;
         --debug) debug_cli=1; shift ;;
+        --spinner) spinner_cli=1; shift ;;
         --help) usage; exit 0 ;;
         --version) printf 'ai-shell %s\n' "$VERSION"; exit 0 ;;
         --) shift; break ;;
@@ -131,19 +133,47 @@ payload=$(jq -n --arg model "$AI_SHELL_MODEL" --arg effort "$AI_SHELL_REASONING_
 
 body_file=$(mktemp) || die 5 'could not create temporary response file'
 payload_file=$(mktemp) || { rm -f -- "$body_file"; die 5 'could not create temporary request file'; }
-trap 'rm -f -- "$body_file" "$payload_file"' EXIT
+spinner_pid=
+stop_spinner() {
+    [[ -n $spinner_pid ]] || return 0
+    kill "$spinner_pid" 2>/dev/null || true
+    wait "$spinner_pid" 2>/dev/null || true
+    spinner_pid=
+    printf '\r\033[2K' >&2
+}
+cleanup() {
+    stop_spinner
+    rm -f -- "$body_file" "$payload_file"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+spinner_loop() {
+    local frames=('|' '/' '-' "\\") index=0
+    while :; do
+        printf '\r\033[2Kai-shell: waiting %s' "${frames[index]}" >&2
+        index=$(((index + 1) % 4))
+        sleep 0.12
+    done
+}
 printf '%s' "$payload" > "$payload_file"
 log "version=$VERSION model=$AI_SHELL_MODEL effort=$AI_SHELL_REASONING_EFFORT tokens=$AI_SHELL_MAX_OUTPUT_TOKENS connect_timeout=$AI_SHELL_CONNECT_TIMEOUT_SECONDS timeout=$AI_SHELL_TIMEOUT_SECONDS"
 start=$SECONDS
+if ((spinner_cli)) && [[ -t 2 ]]; then
+    spinner_loop &
+    spinner_pid=$!
+fi
 # curl reads the Authorization header from stdin, keeping the key out of process arguments.
-if http_status=$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl --silent --show-error --config - --connect-timeout "$AI_SHELL_CONNECT_TIMEOUT_SECONDS" --max-time "$AI_SHELL_TIMEOUT_SECONDS" --request POST --header 'Content-Type: application/json' --data-binary "@$payload_file" --output "$body_file" --write-out '%{http_code}' 'https://api.openai.com/v1/responses'); then
+if http_status=$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl --silent --show-error --config - --connect-timeout "$AI_SHELL_CONNECT_TIMEOUT_SECONDS" --max-time "$AI_SHELL_TIMEOUT_SECONDS" --request POST --header 'Content-Type: application/json' --data-binary "@$payload_file" --output "$body_file" --write-out '%{http_code}' 'https://api.openai.com/v1/responses' 2>/dev/null); then
     :
 else
     status=$?
+    stop_spinner
     log "duration_seconds=$((SECONDS-start)) transport_exit=$status category=transport"
     if [[ $status == 28 ]]; then die 5 'request timed out'; fi
     die 5 "network or TLS failure (curl exit $status)"
 fi
+stop_spinner
 log "duration_seconds=$((SECONDS-start)) http_status=$http_status"
 [[ $http_status =~ ^[0-9]{3}$ ]] || die 7 'invalid HTTP status from transport'
 if ((http_status < 200 || http_status > 299)); then
