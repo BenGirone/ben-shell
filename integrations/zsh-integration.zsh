@@ -1,4 +1,4 @@
-# Source from interactive zsh. Ctrl+X Ctrl+I rewrites the current ZLE buffer.
+# Source from interactive zsh. Ctrl+G rewrites the current ZLE buffer.
 [[ -o interactive ]] || return 0
 
 function ai-shell-rewrite-widget() {
@@ -22,4 +22,6 @@ function ai-shell-rewrite-widget() {
 }
 
 zle -N ai-shell-rewrite-widget
+bindkey '^G' ai-shell-rewrite-widget
+# Keep the previous binding for existing users.
 bindkey '^X^I' ai-shell-rewrite-widget

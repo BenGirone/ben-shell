@@ -50,5 +50,5 @@ fi
 cat <<EOF
 Installed ai-shell for macOS zsh in $bin_dir.
 Ensure $bin_dir is in PATH, then run: source ~/.zshrc
-Type a request and press Ctrl+X Ctrl+I. Inspect the proposed command before pressing Enter.
+Type a request and press Ctrl+G. Inspect the proposed command before pressing Enter.
 EOF

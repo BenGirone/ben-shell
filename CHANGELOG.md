@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0 — 2026-09-22
+
+- Added Ctrl+G as a single-chord macOS zsh binding. The previous Ctrl+X Ctrl+I binding still works.
+
 ## 1.2.0 — 2026-09-22
 
 - Show a terminal spinner during interactive rewrites on Bash and zsh, clearing it before the result or an error.

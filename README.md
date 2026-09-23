@@ -7,22 +7,22 @@ While an interactive rewrite is waiting for the API, a spinner appears on the te
 | Platform | Shell | Key binding | Installer |
 | --- | --- | --- | --- |
 | Ubuntu | Bash / GNU Readline | Alt+I | `./install.sh` |
-| macOS | zsh / ZLE | Ctrl+X Ctrl+I | `./install-macos.sh` |
+| macOS | zsh / ZLE | Ctrl+G | `./install-macos.sh` |
 
-macOS zsh's ZLE exposes the whole editable buffer through `BUFFER`. The widget replaces that buffer and moves the cursor to its end; pressing the key binding does not submit the line. The macOS binding is a two-key sequence: press Ctrl+X, then Ctrl+I.
+macOS zsh's ZLE exposes the whole editable buffer through `BUFFER`. The widget replaces that buffer and moves the cursor to its end; pressing the key binding does not submit the line. Ctrl+G replaces zsh's default `send-break` binding. The previous Ctrl+X, Ctrl+I sequence also remains available.
 
 ## One-command install
 
 Use the platform's terminal:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.2.0/install-online.sh | bash
+curl -fsSL https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.0/install-online.sh | bash
 ```
 
 The downloadable script contains the source installer and a checksum-checked archive of the files it installs. It detects macOS or Ubuntu, prompts for the OpenAI API key through the terminal without echoing it, saves it as a user-only file, and installs the matching shell binding. An existing key is preserved. Download and inspect the script first if you prefer to review it before running it:
 
 ```bash
-curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.2.0/install-online.sh
+curl -fsSLo install-online.sh https://raw.githubusercontent.com/BenGirone/ben-shell/v1.3.0/install-online.sh
 less install-online.sh
 bash install-online.sh
 ```

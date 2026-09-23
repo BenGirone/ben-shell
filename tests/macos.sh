@@ -26,6 +26,8 @@ jq -e '.input | contains("Platform: macos")' "$tmp/payload" >/dev/null
 printf '%s' '{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[]}' > "$FAKE_RESPONSE"
 result=$(zsh -fic 'source "$HOME/.config/ai-shell/zsh-integration.zsh"; function zle() { :; }; BUFFER="keep this"; CURSOR=2; ai-shell-rewrite-widget 2>/dev/null; print -r -- "$BUFFER|$CURSOR"')
 [[ $result == 'keep this|2' ]]
+binding=$(zsh -fic 'bindkey "^G"')
+[[ $binding == *ai-shell-rewrite-widget* ]]
 binding=$(zsh -fic 'bindkey "^X^I"')
 [[ $binding == *ai-shell-rewrite-widget* ]]
 "$root/uninstall.sh" > "$tmp/uninstall"
